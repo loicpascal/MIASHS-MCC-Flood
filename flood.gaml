@@ -8,9 +8,9 @@
 model flood
 
 global {
-	file roads_shapefile <- file("../includes/road.shp");
+	file roads_shapefile <- file("includes/road.shp");
 	graph road_network;
-	file buildings_shapefile <- file("../includes/building.shp");
+	file buildings_shapefile <- file("includes/building.shp");
 	
 	geometry shape <- envelope(roads_shapefile);
 	int nbAdults <- 15;
@@ -65,7 +65,7 @@ grid place height: grid_size width: grid_size neighbors: 8 {
 		  update:rgb(waterLevel > 0 ? 0 : 255, waterLevel > 0 ? 0 : 255, waterLevel > 0 ? int(1.275*waterLevel) : 255);
 
 	init {
-		equipmentLevel <- maxEquipmentLevel;
+		equipmentLevel <- rnd(maxEquipmentLevel);
 		
 		if (grid_x = grid_size - 1) {
 			waterLevel <- rnd(rainIntensity*10 - equipmentLevel);
@@ -88,8 +88,7 @@ grid place height: grid_size width: grid_size neighbors: 8 {
 ** BUILDING
 ******************************/
 species building {
-	aspect default
-	{
+	aspect default {
 		draw shape color:#slategrey;
 	}
 }
@@ -160,7 +159,7 @@ species civil parent:human {
 		speed <- 10.0 # km / # h;
 	}
 	
-	reflex survive when:!isGoingToSafeBuilding {
+	reflex survive when:(myPlace.waterLevel >= levelOfWaterForHelp and !isGoingToSafeBuilding) {
 		sante <- sante - int(myPlace.waterLevel/10);
 	}
 	
@@ -211,7 +210,7 @@ species adult parent:civil {
 species oldPerson parent:civil {
 	
 	aspect oldPersonAspect {
-		draw square(8) color:#purple;
+		draw square(8) color:#green;
 	}
 	
 	init {
