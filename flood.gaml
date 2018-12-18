@@ -17,17 +17,16 @@ global {
 	int nbCars <- 10;
 	int nbChildrens <- 10;
 	int nbOldPersons <- 10;
-	int nbRescuerPedestrians <- 10;
+	int nbRescuerInCar <- 10;
 	int nbRescuerInHelicopter <- 6;
 	
 	int grid_size <- 90;
 	int maxSante <- 200;
-	
 	int levelOfWaterForHelp <- 2;
 	int maxWaterLevel <- 200;
 	int waterLevelToFloodNeighbors <- 40;
 	int maxEquipmentLevel <- 200;
-	int rainIntensity <- 10;
+	int floodIntensity <- 10;
 	
 	int nbDeadCivil <- 0;
 	
@@ -42,8 +41,9 @@ global {
 		create road from: roads_shapefile;
 		create adult number: nbAdults;
 		create children number: nbChildrens;
-		create car number: nbCars;
-		create rescuerInCar number: nbRescuerPedestrians;
+		create oldPerson number: nbOldPersons;
+		create civilInCar number: nbCars;
+		create rescuerInCar number: nbRescuerInCar;
 		create rescuerInHelicopter number: nbRescuerInHelicopter;
 		road_network <- as_edge_graph(road);
 		safeBuilding <- one_of(building where(each.name = "building133"));
@@ -68,7 +68,7 @@ grid place height: grid_size width: grid_size neighbors: 8 {
 		equipmentLevel <- rnd(maxEquipmentLevel);
 		
 		if (grid_x = grid_size - 1) {
-			waterLevel <- rnd(rainIntensity*10 - equipmentLevel);
+			waterLevel <- rnd(floodIntensity*10 - equipmentLevel);
 		}
 	}
 	
@@ -79,7 +79,7 @@ grid place height: grid_size width: grid_size neighbors: 8 {
 	reflex flood {
 		place floodedNeighbor <- one_of(neighbors where (each.waterLevel >= waterLevelToFloodNeighbors));
 		if (floodedNeighbor != nil and flip(0.2)) {
-			waterLevel <- waterLevel + int(rainIntensity) + int(floodedNeighbor.waterLevel/3) - equipmentLevel;
+			waterLevel <- waterLevel + int(floodIntensity) + int(floodedNeighbor.waterLevel/3) - equipmentLevel;
 		}
 	}
 }
@@ -144,21 +144,6 @@ species civil parent:human {
 	rescuer myRescuer <- nil;
 	bool isInSafePlace <- false;
 	
-	init {
-		// TEST
-		//myBuilding <- one_of(building where(each.name = "building50"));
-		if (flip(0.5)) {
-			road myRoad <- one_of(road);
-			location <- any_location_in(myRoad);
-		} 
-		else {
-			building myBuilding <- one_of(building where(each.name != "building108" and each.name != "building122" and each.name != "building133"));
-			location <- any_location_in(myBuilding);
-		}
-		myPlace <- place({location.x, location.y});
-		speed <- 10.0 # km / # h;
-	}
-	
 	reflex survive when:(myPlace.waterLevel >= levelOfWaterForHelp and !isGoingToSafeBuilding) {
 		sante <- sante - int(myPlace.waterLevel/10);
 	}
@@ -168,10 +153,6 @@ species civil parent:human {
 		myRescuer.civilToRescue <- nil;
 		nbDeadCivil <- nbDeadCivil + 1;
 		do die;
-	}
-	
-	reflex updateSpeed {
-		speed <- 15.0 - (myPlace.waterLevel / 20) # km / # h;
 	}
 	
 	reflex ask_help when:(myPlace.waterLevel >= levelOfWaterForHelp and myRescuer = nil) {
@@ -186,9 +167,32 @@ species civil parent:human {
 }
 
 /******************************
+** CIVIL PEDESTRIAN parent : HUMAN
+******************************/
+species civilPedestrian parent:civil {
+	
+	init {
+		if (flip(0.5)) {
+			road myRoad <- one_of(road);
+			location <- any_location_in(myRoad);
+		} 
+		else {
+			building myBuilding <- one_of(building where(each.name != "building108" and each.name != "building122" and each.name != "building133"));
+			location <- any_location_in(myBuilding);
+		}
+		myPlace <- place({location.x, location.y});
+		speed <- 10.0 # km / # h;
+	}
+	
+	reflex updateSpeed {
+		speed <- 15.0 - (myPlace.waterLevel / 20) # km / # h;
+	}
+}
+
+/******************************
 ** ADULT parent : CIVIL
 ******************************/
-species adult parent:civil {
+species adult parent:civilPedestrian {
 	
 	aspect adultAspect {
 		draw square(8) color:#orange;
@@ -207,10 +211,10 @@ species adult parent:civil {
 /******************************
 ** OLD PERSON parent : CIVIL
 ******************************/
-species oldPerson parent:civil {
+species oldPerson parent:civilPedestrian {
 	
 	aspect oldPersonAspect {
-		draw square(8) color:#green;
+		draw square(8) color:#springgreen;
 	}
 	
 	init {
@@ -221,7 +225,7 @@ species oldPerson parent:civil {
 /******************************
 ** CHILDREN parent : CIVIL
 ******************************/
-species children parent:civil {
+species children parent:civilPedestrian {
 	
 	aspect childrenAspect {
 		draw geometry:square(8) color: #magenta;
@@ -235,19 +239,16 @@ species children parent:civil {
 /******************************
 ** CAR parent : HUMAN
 ******************************/
-species car parent:human {
-	aspect carAspect {
+species civilInCar parent:civil {
+	
+	aspect civilInCarAspect {
 		draw rectangle(8, 14) + triangle(6) color: #black rotate: heading + 90;
 	}
 	
 	init {
 		location <- any_location_in(one_of(road));
 		myPlace <- place({location.x, location.y});
-		speed <- 4 * maxWaterLevel + 10.0 # km / # h;
-	}
-	
-	reflex move {
-		do wander on:road_network;
+		sante <- 150 + rnd(int(0.25*maxSante));
 	}
 }
 
@@ -256,20 +257,13 @@ species car parent:human {
 ******************************/
 species rescuer parent:human {
 	civil civilToRescue <- nil;
-	string type;
 	
 	init {
 		sante <- 180 + rnd(int(0.1*maxSante));
-		// TEST
 		building myBuilding <- one_of(building where(each.name = "building108" or each.name = "building122"));
-		//myBuilding <- one_of(building where(each.name = "building108"));
 		location <- any_location_in(myBuilding);
 		myPlace <- place({location.x, location.y});
 		heading <- 360.0;
-	}
-	
-	reflex survive when:flip(0.01) {
-		sante <- sante - int(myPlace.waterLevel/10);
 	}
 	
 	reflex die when: sante <= 0 {
@@ -291,11 +285,16 @@ species rescuer parent:human {
 		if (civilToRescue = nil) {
 			civilToRescue <- c;
 		}
+		
 		// The rescuer arrived at the victim's place
 		if ((self distance_to civilToRescue) < 5) {
 			do bringCivilToSafePlace;
 		} else {
-			do goto target:civilToRescue on:road_network recompute_path:false;
+			if (self is rescuerInCar) {
+				do goto target:civilToRescue on:road_network recompute_path:false;
+			} else {
+			do goto target:civilToRescue recompute_path:false;
+			}
 		}
 	}
 	
@@ -315,8 +314,11 @@ species rescuerInCar parent:rescuer {
 	}
 	
 	init {
-		type <- "inCar";
 		speed <- maxWaterLevel + 10.0 # km / # h;
+	}
+	
+	reflex survive when:flip(0.01) {
+		sante <- sante - int(myPlace.waterLevel/10);
 	}
 	
 	reflex updateSpeed when:!isGoingToSafeBuilding {
@@ -343,19 +345,13 @@ species rescuerInHelicopter parent:rescuer {
 	}
 	
 	init {
-		type <- "inBoat";
 		speed <- maxWaterLevel + 10.0 # km / # h;
-	}
-	
-	reflex updateSpeed when:!isGoingToSafeBuilding {
-		speed <- (maxWaterLevel - myPlace.waterLevel)/2 + 10.0 # km / # h; // Vitesse proportionnelle au niveau de l'eau
 	}
 	
 	/**
 	 * The rescuer go to the safe building by the road
 	 */
 	action goToSafeBuilding {
-		write "go to safe building : " + isGoingToSafeBuilding;
 		do goToSafeBuildingInHelicopter;
 		ask civilToRescue {
 			do goToSafeBuildingInHelicopter;
@@ -365,11 +361,12 @@ species rescuerInHelicopter parent:rescuer {
 
 experiment suddenFlood type:gui {
 	parameter "Max equipment level: " var:maxEquipmentLevel min:0 max:10 category:"Environment";
-	parameter "Rain intensity: " var:rainIntensity min:0 max:20 category:"Environment";
+	parameter "Flood intensity: " var:floodIntensity min:0 max:20 category:"Environment";
 	parameter "Number of adults: " var:nbAdults min:1 max:50 category:"Civils";
 	parameter "Number of childrens: " var:nbChildrens min:1 max:50 category:"Civils";
+	parameter "Number of old persons: " var:nbOldPersons min:1 max:50 category:"Civils";
 	parameter "Number of cars: " var:nbCars min:1 max:50 category:"Cars";
-	parameter "Number of pedestrian rescuers: " var:nbRescuerPedestrians min:1 max:50 category:"Rescuers";
+	parameter "Number of pedestrian rescuers: " var:nbRescuerInCar min:1 max:50 category:"Rescuers";
 	parameter "Number of rescuers in helicopter: " var:nbRescuerInHelicopter min:1 max:50 category:"Rescuers";
 	
 	output{
@@ -378,15 +375,17 @@ experiment suddenFlood type:gui {
 			species road transparency: 0.1;
 			species building aspect: default transparency: 0.1;
 			species adult aspect: adultAspect;
+			species oldPerson aspect: oldPersonAspect;
 			species children aspect: childrenAspect;
-			species car aspect: carAspect;
+			species civilInCar aspect: civilInCarAspect;
 			species rescuerInCar aspect: rescuerInCarAspect;
 			species rescuerInHelicopter aspect: rescuerInHelicopterAspect;
 		}
 		
 		display my_chart {
-			chart "Number of civil saved" {
-				data "civil saved" value: length(civil where (each.isInSafePlace = true)) color:#red;
+			chart "Number of civil alive" {
+				data "civil alive" value: length(civil) color:#red;
+				data "rescuer alive" value: length(rescuer) color:#red;
 			}
 		}
 	}
